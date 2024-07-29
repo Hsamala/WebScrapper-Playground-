@@ -1,8 +1,6 @@
 import requests, sys, os
-import pdb, csv
+import pdb, sqlite3 
 from bs4 import BeautifulSoup
-
-newJson = "new_scrapped_data.csv"
 
 baseURL = "https://remote.co/remote-jobs/"
 
@@ -21,15 +19,19 @@ def parseIntialLandingSoup(currentSoup: BeautifulSoup, tagSearch: str) -> Beauti
     card_BodyClass = currentSoup.find("div", class_="card bg-light mb-3 rounded-0")
     job_HTML = card_BodyClass.find_all("a", class_="card m-0 border-left-0 border-right-0 border-top-0 border-bottom")
 
+    #
+
     for job in job_HTML:
         job_Tag = job.find("span", class_="badge badge-success")
+        if (type(job_Tag) == type(None)):
+            continue; 
         if(job_Tag.text.strip() == tagSearch):
             actualJobPageURL = requests.get("https://remote.co" + job["href"])
             actualJobPageHTMLSoup = BeautifulSoup(actualJobPageURL.content, "html.parser")
             return actualJobPageHTMLSoup
     return None
 
-def parseJobPostingSoup(JobSiteSoup: BeautifulSoup) -> list:
+def parseJobPostingSoup(JobSiteSoup: BeautifulSoup) -> dict:
     jobInfo = {
         "Job Name" : "",
         "Job Location" : "", 
@@ -38,60 +40,85 @@ def parseJobPostingSoup(JobSiteSoup: BeautifulSoup) -> list:
         "Company Link": "",
         "Apply Link": ""
     }
+
+    #pdb.set_trace()
+
     #Traversing through the general site:
     job_Name = JobSiteSoup.find("h1", class_="font-weight-bold")
-    company_Link = JobSiteSoup.find("div", class_="links_sm").a["href"]
+    company_Link = JobSiteSoup.find("div", class_="links_sm")
+    if(company_Link is not None):
+        company_Link = company_Link.a["href"]
+    else:
+        company_Link = "N/A"
     job_info_container = JobSiteSoup.find("div", class_="job_info_container_sm")
-    apply_Link = JobSiteSoup.find("div", class_="application").a["href"]
+    apply_Link = JobSiteSoup.find("div", class_="application")
+    if(apply_Link is not None):
+        apply_Link = apply_Link.a["href"]
+    else:
+        apply_Link = "N/A"
 
     #Create a job_info_container for the small nibs of info at the top
     job_Location = job_info_container.find("div", class_="location_sm row")
-    job_Posted_Date = job_info_container.find("time")["datetime"]
+    job_Posted_Date = job_info_container.find("time")
+    if(job_Posted_Date is not None):
+        job_Posted_Date = job_Posted_Date["datetime"]
+    else:
+        job_Posted_Date = "N/A"
     job_Salary = job_info_container.find("div", class_="salary_sm row")
 
     #Add everything to the jobInfo dictionary
     jobInfo["Job Name"] = job_Name
     jobInfo["Job Location"] = job_Location
-    jobInfo["Job Posted Date"] = job_Posted_Date 
+    jobInfo["Job Posted Date"] = job_Posted_Date
     jobInfo["Job Salary"] = job_Salary
     jobInfo["Company Link"] = company_Link
     jobInfo["Apply Link"] = apply_Link
 
     return jobInfo
 
-def writeToCSV(jobInfo: dict, csv_File: str):
+def writeToDatabase(jobInfo: dict): 
+
+    dataBaseConnection = sqlite3.connect("scrappedData.db")
+    cursor = dataBaseConnection.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS scrape
+
+            ( 
+              Name TEXT,
+              Location TEXT,  
+              Posted_Date TEXT,
+              Salary TEXT,
+              Company_Link TEXT,
+              Apply_Link TEXT
+
+            )    
+    
+    ''')
+    dataBaseConnection.commit()
 
     for key in jobInfo:
-        if( type(jobInfo[key]) == str):
-            jobInfo[key] = jobInfo[key]
-        elif ( jobInfo[key] == None):
-            jobInfo[key] = "None"
+        if( (jobInfo[key] is None) or (type(jobInfo[key]) == str) ):
+            continue
         else:
-            jobInfo[key] = str(jobInfo[key].text.strip())
+            jobInfo[key] = jobInfo[key].text
+
+    cursor.execute('''
+
+        INSERT INTO scrape (Name, Location, Posted_Date, Salary, Company_Link, Apply_Link)
+        VALUES (?, ?, ?, ?, ?, ?)
+    ''', (jobInfo["Job Name"], jobInfo["Job Location"], jobInfo["Job Posted Date"], jobInfo["Job Salary"], jobInfo["Company Link"], jobInfo["Apply Link"]))
     
-    write_file_size = os.path.getsize(newJson)
+    dataBaseConnection.commit()
+    dataBaseConnection.close()
 
-    if(write_file_size == 0): 
-        with open(csv_File, "w", newline="") as csv_file:
-            csv_writer = csv.writer(csv_file)
-        
-            for key, value in jobInfo.items():
-                csv_writer.writerow([key, value])
-    else:
-       with open(csv_File, "a", newline="") as csv_file:
-            csv_writer = csv.writer(csv_file)
-        
-            for key, value in jobInfo.items():
-                csv_writer.writerow([key, value]) 
-
-
-def readAndCompare(jobInfo: dict, csv_File: str):
+'''def readAndCompare(jobInfo: dict, csv_File: str):
 
     with open(csv_File, 'r') as currentFile:
         csv_Reader = csv.DictReader(currentFile)
 
         for row in csv_Reader:
-           print(row)       
+           print(row)      ''' 
 
 
 def main():
@@ -111,9 +138,7 @@ def main():
         if(jobInfoDict == None):
             continue
         else:
-            writeToCSV(jobInfoDict, newJson)
-
-        readAndCompare(jobInfoDict, newJson)
+            writeToDatabase(jobInfoDict)
 
 
 
