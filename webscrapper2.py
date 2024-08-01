@@ -3,6 +3,7 @@ import pdb, sqlite3
 from bs4 import BeautifulSoup
 
 baseURL = "https://remote.co/remote-jobs/"
+DBfile = "scrappedData.db"
 
 jobBuckets = ["accounting", "customer service", "online-data-entry", "design",
               "developer", "online-editing", "healthcare", "recruiter", "legal",
@@ -78,7 +79,7 @@ def parseJobPostingSoup(JobSiteSoup: BeautifulSoup) -> dict:
 
 def writeToDatabase(jobInfo: dict): 
 
-    dataBaseConnection = sqlite3.connect("scrappedData.db")
+    dataBaseConnection = sqlite3.connect(DBfile)
     cursor = dataBaseConnection.cursor()
     
     cursor.execute('''
@@ -112,13 +113,23 @@ def writeToDatabase(jobInfo: dict):
     dataBaseConnection.commit()
     dataBaseConnection.close()
 
-'''def readAndCompare(jobInfo: dict, csv_File: str):
 
-    with open(csv_File, 'r') as currentFile:
-        csv_Reader = csv.DictReader(currentFile)
 
-        for row in csv_Reader:
-           print(row)      ''' 
+
+def readAndCompare(DBfile: str,  jobInfo: dict):
+
+    dbConnection = sqlite3.connect(DBfile)
+    cursor = dbConnection.cursor()
+
+    searchName = jobInfo["Job Name"].text
+
+    cursor.execute("SELECT * FROM scrape WHERE Name = ?", (searchName,))
+
+    rows = cursor.fetchall()
+
+    for row in rows:
+        print("This is the job also found in the table: " + str(row))
+         
 
 
 def main():
@@ -138,6 +149,7 @@ def main():
         if(jobInfoDict == None):
             continue
         else:
+            readAndCompare(DBfile, jobInfoDict)
             writeToDatabase(jobInfoDict)
 
 
